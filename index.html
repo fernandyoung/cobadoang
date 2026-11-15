@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2f6f5e">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Catatan Offline</title>
+<style>
+  :root { --hijau:#2f6f5e; --bg:#f6f7f5; --kartu:#fff; --teks:#1d2421; --abu:#6b7571; --garis:#e1e5e2; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--teks); padding-bottom: env(safe-area-inset-bottom); }
+  header { background:var(--hijau); color:#fff; padding:14px 16px; display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; }
+  header h1 { font-size:18px; margin:0; }
+  #status { font-size:12px; background:rgba(255,255,255,.2); padding:3px 10px; border-radius:99px; }
+  main { max-width:560px; margin:0 auto; padding:16px; }
+  form { display:flex; gap:8px; margin-bottom:16px; }
+  input[type=text] { flex:1; padding:12px; font-size:16px; border:1px solid var(--garis); border-radius:10px; }
+  button { font-size:15px; padding:12px 16px; border:0; border-radius:10px; background:var(--hijau); color:#fff; cursor:pointer; }
+  button.sekunder { background:#fff; color:var(--hijau); border:1px solid var(--hijau); }
+  ul { list-style:none; padding:0; margin:0; }
+  li { background:var(--kartu); border:1px solid var(--garis); border-radius:10px; padding:12px; margin-bottom:8px; display:flex; align-items:center; gap:10px; }
+  li.selesai span { text-decoration:line-through; color:var(--abu); }
+  li span { flex:1; word-break:break-word; }
+  li input { width:20px; height:20px; }
+  li .hapus { background:none; color:#b3402f; padding:4px 8px; font-size:18px; }
+  .kosong { text-align:center; color:var(--abu); padding:32px 0; }
+  .berbagi { margin-top:24px; padding-top:16px; border-top:1px solid var(--garis); }
+  .berbagi h2 { font-size:15px; margin:0 0 4px; }
+  .berbagi p { font-size:13px; color:var(--abu); margin:0 0 10px; }
+  .baris { display:flex; gap:8px; flex-wrap:wrap; }
+  #pesan { font-size:13px; margin-top:10px; color:var(--hijau); min-height:18px; }
+  #pasang { display:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Catatan Offline</h1>
+  <span id="status">...</span>
+</header>
+<main>
+  <form id="form">
+    <input type="text" id="teks" placeholder="Tulis catatan atau tugas..." autocomplete="off" required>
+    <button type="submit">Tambah</button>
+  </form>
+
+  <ul id="daftar"></ul>
+
+  <section class="berbagi">
+    <h2>Cadangan &amp; berbagi</h2>
+    <p>Data hanya ada di ponsel ini. Untuk memindahkannya, ekspor ke file lalu kirim lewat Bluetooth. Di perangkat tujuan, impor file tersebut.</p>
+    <div class="baris">
+      <button id="ekspor">Ekspor &amp; Bagikan</button>
+      <button class="sekunder" id="impor">Impor file</button>
+      <button class="sekunder" id="pasang">Pasang aplikasi</button>
+    </div>
+    <input type="file" id="berkas" accept=".json,application/json" hidden>
+    <div id="pesan"></div>
+  </section>
+</main>
+
+<script>
+// ---------- Penyimpanan lokal (IndexedDB) ----------
+const DB_NAMA = 'catatan-db', STORE = 'catatan';
+function bukaDB() {
+  return new Promise((ok, gagal) => {
+    const r = indexedDB.open(DB_NAMA, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore(STORE, { keyPath: 'id' });
+    r.onsuccess = () => ok(r.result);
+    r.onerror = () => gagal(r.error);
+  });
+}
+async function semua() {
+  const db = await bukaDB();
+  return new Promise(ok => {
+    const req = db.transaction(STORE).objectStore(STORE).getAll();
+    req.onsuccess = () => ok(req.result.sort((a, b) => b.dibuat - a.dibuat));
+  });
+}
+async function simpan(item) {
+  const db = await bukaDB();
+  return new Promise(ok => {
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).put(item);
+    tx.oncomplete = ok;
+  });
+}
+async function hapus(id) {
+  const db = await bukaDB();
+  return new Promise(ok => {
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).delete(id);
+    tx.oncomplete = ok;
+  });
+}
+
+// ---------- Tampilan ----------
+const $ = id => document.getElementById(id);
+async function tampil() {
+  const data = await semua();
+  const ul = $('daftar');
+  ul.innerHTML = '';
+  if (!data.length) { ul.innerHTML = '<div class="kosong">Belum ada catatan.</div>'; return; }
+  for (const c of data) {
+    const li = document.createElement('li');
+    if (c.selesai) li.className = 'selesai';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = !!c.selesai;
+    cb.onchange = async () => { c.selesai = cb.checked; await simpan(c); tampil(); };
+    const sp = document.createElement('span'); sp.textContent = c.teks;
+    const bt = document.createElement('button');
+    bt.className = 'hapus'; bt.textContent = '✕'; bt.setAttribute('aria-label', 'Hapus');
+    bt.onclick = async () => { await hapus(c.id); tampil(); };
+    li.append(cb, sp, bt);
+    ul.append(li);
+  }
+}
+$('form').onsubmit = async e => {
+  e.preventDefault();
+  const teks = $('teks').value.trim();
+  if (!teks) return;
+  await simpan({ id: crypto.randomUUID(), teks, selesai: false, dibuat: Date.now() });
+  $('teks').value = '';
+  tampil();
+};
+
+// ---------- Ekspor / impor ----------
+function pesan(t) { $('pesan').textContent = t; }
+
+$('ekspor').onclick = async () => {
+  const data = await semua();
+  const isi = JSON.stringify({ versi: 1, diekspor: new Date().toISOString(), catatan: data }, null, 2);
+  const nama = 'catatan-' + new Date().toISOString().slice(0, 10) + '.json';
+  const file = new File([isi], nama, { type: 'application/json' });
+  // Menu "Bagikan" bawaan ponsel akan menampilkan Bluetooth sebagai pilihan.
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: 'Catatan' }); pesan('Dibagikan.'); return; }
+    catch (err) { if (err.name === 'AbortError') return; }
+  }
+  // Cadangan: unduh file, lalu kirim lewat Bluetooth dari aplikasi File.
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file); a.download = nama; a.click();
+  pesan('File diunduh: ' + nama + '. Kirim lewat Bluetooth dari aplikasi File.');
+};
+
+$('impor').onclick = () => $('berkas').click();
+$('berkas').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    const j = JSON.parse(await f.text());
+    const list = Array.isArray(j) ? j : j.catatan;
+    if (!Array.isArray(list)) throw new Error();
+    let n = 0;
+    for (const c of list) {
+      if (c && c.id && typeof c.teks === 'string') { await simpan(c); n++; }  // id sama = ditimpa, tidak dobel
+    }
+    pesan(n + ' catatan diimpor.');
+    tampil();
+  } catch { pesan('File tidak valid.'); }
+  e.target.value = '';
+};
+
+// ---------- Status online/offline ----------
+function status() {
+  const s = $('status');
+  s.textContent = navigator.onLine ? 'Online' : 'Offline';
+}
+addEventListener('online', status); addEventListener('offline', status);
+
+// ---------- Tombol pasang & service worker ----------
+let tundaPasang;
+addEventListener('beforeinstallprompt', e => {
+  e.preventDefault(); tundaPasang = e; $('pasang').style.display = 'inline-block';
+});
+$('pasang').onclick = async () => {
+  if (!tundaPasang) return;
+  tundaPasang.prompt(); await tundaPasang.userChoice;
+  tundaPasang = null; $('pasang').style.display = 'none';
+};
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+
+status(); tampil();
+</script>
+</body>
+</html>
