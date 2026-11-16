@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Uji Sinkron Tanpa Akun (Tahap 2)</title>
+<style>
+:root{--bg:#faf8f4;--fg:#26231f;--mut:#756f66;--line:#e2ddd3;--acc:#2f6b57;--bad:#a8402f;--card:#fff}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--fg);padding:16px;max-width:720px;margin-inline:auto}
+h1{font-size:1.3rem;margin:0 0 4px}h2{font-size:1.05rem;margin:0 0 8px}
+p.s{color:var(--mut);margin:0 0 16px;font-size:.9rem}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+button{font:inherit;padding:8px 12px;border-radius:8px;border:1px solid var(--acc);background:var(--acc);color:#fff;cursor:pointer;margin:2px 4px 2px 0}
+button.o{background:#fff;color:var(--acc)}button.d{background:#fff;color:var(--bad);border-color:var(--bad)}
+input,textarea,select{font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;width:100%;margin:3px 0;background:#fff;color:var(--fg)}
+textarea{height:90px;font:12px/1.3 ui-monospace,monospace;word-break:break-all}
+.row{display:flex;gap:6px;flex-wrap:wrap}.row>*{flex:1 1 120px}
+.badge{display:inline-block;padding:2px 10px;border-radius:99px;font-size:.85rem;border:1px solid var(--line)}
+.ok{color:var(--acc);border-color:var(--acc)}.no{color:var(--bad);border-color:var(--bad)}
+.big{font-size:2rem;letter-spacing:.2em;font-weight:700;text-align:center;padding:6px;background:var(--bg);border-radius:8px}
+ul{list-style:none;padding:0;margin:0}
+li.b{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+li.b small{color:var(--mut)}
+#log{font:12px/1.4 ui-monospace,monospace;max-height:220px;overflow:auto;background:#1f1d1a;color:#d8d3c8;padding:8px;border-radius:8px;white-space:pre-wrap}
+.t{font-size:.9rem}.t li{padding:2px 0}
+</style>
+</head>
+<body>
+<h1>Uji sinkron tanpa akun</h1>
+<p class="s">Dua perangkat, tanpa server, tanpa akun. Data lewat koneksi WebRTC langsung, terenkripsi, dan digabung per buku. Ini alat uji, bukan app jadi.</p>
+
+<section>
+<h2>1. Perpustakaan uji (disimpan di perangkat ini)</h2>
+<div class="row">
+<input id="ti" placeholder="Judul buku">
+<input id="pr" type="number" min="0" max="100" placeholder="Progres %">
+</div>
+<button id="add">Tambah / perbarui</button>
+<button class="o" id="seed">Isi 3 buku contoh</button>
+<ul id="list"></ul>
+<p class="s" id="meta"></p>
+</section>
+
+<section>
+<h2>2. Hubungkan dua perangkat</h2>
+<p>Status: <span class="badge" id="st">belum terhubung</span> <span class="badge" id="route"></span></p>
+<label class="t"><input type="checkbox" id="stun" checked style="width:auto"> Pakai STUN publik (perlu untuk beda jaringan; matikan untuk uji WiFi yang sama, lalu tak ada yang dikirim ke pihak ketiga)</label>
+<hr style="border:0;border-top:1px solid var(--line)">
+<p><b>Perangkat A</b> (yang mengundang)</p>
+<button id="mk">A1. Buat kode undangan</button>
+<textarea id="offer" readonly placeholder="Kode undangan muncul di sini"></textarea>
+<button class="o" data-copy="offer">Salin</button><button class="o" data-share="offer">Bagikan</button>
+<p>A2. Tempel kode jawaban dari B:</p>
+<textarea id="ansIn" placeholder="Tempel kode jawaban"></textarea>
+<button id="fin">A3. Sambungkan</button>
+<hr style="border:0;border-top:1px solid var(--line)">
+<p><b>Perangkat B</b> (yang menerima)</p>
+<p>B1. Tempel kode undangan dari A:</p>
+<textarea id="offIn" placeholder="Tempel kode undangan"></textarea>
+<button id="join">B2. Buat kode jawaban</button>
+<textarea id="answer" readonly placeholder="Kode jawaban muncul di sini"></textarea>
+<button class="o" data-copy="answer">Salin</button><button class="o" data-share="answer">Bagikan</button>
+<hr style="border:0;border-top:1px solid var(--line)">
+<p>Kode pencocokan (harus sama di A dan B; jika beda, ada pihak ketiga di tengah, batalkan):</p>
+<div class="big" id="sas">------</div>
+<button class="d" id="close">Putus</button>
+<button class="o" id="ping">Uji kecepatan (ping)</button>
+</section>
+
+<section>
+<h2>3. Cadangan: gabung lewat berkas (tahap 1)</h2>
+<p class="s">Jalur kedua tanpa koneksi langsung. Ekspor dari satu perangkat, impor di yang lain; hasilnya digabung, bukan ditimpa.</p>
+<button class="o" id="exp">Ekspor berkas</button>
+<input type="file" id="imp" accept=".json,application/json">
+</section>
+
+<section>
+<h2>4. Uji otomatis logika penggabungan</h2>
+<button class="o" id="self">Jalankan</button>
+<ul class="t" id="selfOut"></ul>
+</section>
+
+<section>
+<h2>Skenario yang perlu dicoba</h2>
+<ul class="t">
+<li>☐ Satu WiFi: matikan STUN, sambungkan HP dan laptop.</li>
+<li>☐ Beda jaringan (data seluler vs WiFi): nyalakan STUN. Lihat apakah rutenya "direct" atau gagal.</li>
+<li>☐ Ubah buku yang sama di dua sisi saat putus, lalu sambungkan lagi: yang terbaru menang.</li>
+<li>☐ Hapus di A, ubah di B: lihat hasilnya di log.</li>
+<li>☐ Tutup tab, buka lagi: data masih ada?</li>
+<li>☐ iPhone Safari: apakah data bertahan setelah 7+ hari tanpa dibuka (dan setelah dipasang ke layar utama)?</li>
+<li>☐ Kode undangan lewat WhatsApp/AirDrop: apakah terpotong?</li>
+</ul>
+</section>
+
+<section><h2>Log</h2><div id="log"></div></section>
+
+<script>
+(()=>{
+"use strict";
+const $=id=>document.getElementById(id);
+const KEY="synctest.v1";
+const uid=()=>Math.random().toString(36).slice(2,10);
+const enc=new TextEncoder();
+
+/* ---------- Penyimpanan ---------- */
+function load(){
+  try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&s.books)return s}catch(e){}
+  return {dev:uid(),clock:0,books:{}};
+}
+let S=load();
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){log("Gagal simpan: "+e.message)}}
+function tick(){S.clock=Math.max(S.clock+1,Date.now());return S.clock}
+
+/* ---------- Penggabungan: terakhir menang per buku, penghapusan tercatat ---------- */
+function newer(a,b){ // a menang atas b?
+  if(!b)return true;
+  if(a.t!==b.t)return a.t>b.t;
+  return a.by>b.by;
+}
+function merge(local,remote){ // kembalikan {books, changed}
+  const out={...local};let changed=false;let maxT=0;
+  for(const [id,r] of Object.entries(remote||{})){
+    maxT=Math.max(maxT,r.t);
+    if(newer(r,out[id])){out[id]=r;changed=true}
+  }
+  return {books:out,changed,maxT};
+}
+function snapshot(){return {v:1,books:S.books}}
+
+/* ---------- Tampilan ---------- */
+function render(){
+  const ul=$("list");ul.innerHTML="";
+  const items=Object.entries(S.books).filter(([,b])=>!b.del).sort((a,b)=>b[1].t-a[1].t);
+  for(const [id,b] of items){
+    const li=document.createElement("li");li.className="b";
+    const d=document.createElement("div");
+    d.textContent=b.title;
+    const sm=document.createElement("small");
+    sm.textContent=" · "+b.pr+"% · diubah di "+b.by.slice(0,4);
+    d.appendChild(sm);
+    const bt=document.createElement("button");bt.className="d";bt.textContent="Hapus";
+    bt.onclick=()=>{S.books[id]={...b,del:true,t:tick(),by:S.dev};save();render();broadcast("hapus "+b.title)};
+    li.append(d,bt);ul.appendChild(li);
+  }
+  if(!items.length){const li=document.createElement("li");li.className="b";li.textContent="Belum ada buku.";ul.appendChild(li)}
+  const dead=Object.values(S.books).filter(b=>b.del).length;
+  $("meta").textContent="ID perangkat: "+S.dev+" · "+items.length+" buku · "+dead+" penanda hapus";
+}
+const logEl=$("log");
+function log(m){logEl.textContent+=new Date().toLocaleTimeString()+"  "+m+"\n";logEl.scrollTop=logEl.scrollHeight}
+
+/* ---------- Aksi buku ---------- */
+$("add").onclick=()=>{
+  const title=$("ti").value.trim();if(!title)return;
+  const pr=Math.max(0,Math.min(100,parseInt($("pr").value||"0",10)||0));
+  let id=Object.keys(S.books).find(k=>!S.books[k].del&&S.books[k].title.toLowerCase()===title.toLowerCase());
+  if(!id)id=uid();
+  S.books[id]={title,pr,t:tick(),by:S.dev};
+  save();render();$("ti").value="";$("pr").value="";broadcast("ubah "+title);
+};
+$("seed").onclick=()=>{
+  for(const [t,p] of [["Contoh: Dune",40],["Contoh: Piranesi",100],["Contoh: Middlemarch",12]]){
+    S.books[uid()]={title:t,pr:p,t:tick(),by:S.dev};
+  }
+  save();render();broadcast("contoh");
+};
+
+/* ---------- WebRTC tanpa server sinyal ---------- */
+let pc=null,dc=null,pingAt=0,offerSdp="",answerSdp="";
+const st=$("st");
+function setSt(t,cls){st.textContent=t;st.className="badge "+(cls||"")}
+function b64e(o){return btoa(unescape(encodeURIComponent(JSON.stringify(o))))}
+function b64d(s){return JSON.parse(decodeURIComponent(escape(atob(s.replace(/\s+/g,"")))))}
+function mkPC(){
+  if(pc)try{pc.close()}catch(e){}
+  const ice=$("stun").checked?[{urls:"stun:stun.l.google.com:19302"}]:[];
+  pc=new RTCPeerConnection({iceServers:ice});
+  pc.oniceconnectionstatechange=()=>{
+    log("ICE: "+pc.iceConnectionState);
+    if(pc.iceConnectionState==="failed")setSt("gagal","no");
+    if(pc.iceConnectionState==="disconnected")setSt("terputus","no");
+  };
+  return pc;
+}
+function waitIce(p){
+  return new Promise(res=>{
+    if(p.iceGatheringState==="complete")return res();
+    const f=()=>{if(p.iceGatheringState==="complete"){p.removeEventListener("icegatheringstatechange",f);res()}};
+    p.addEventListener("icegatheringstatechange",f);
+    setTimeout(res,6000);
+  });
+}
+function fp(sdp){const m=/a=fingerprint:\S+ (\S+)/.exec(sdp);return m?m[1]:""}
+async function showSas(){
+  const a=fp(offerSdp),b=fp(answerSdp);if(!a||!b)return;
+  const h=await crypto.subtle.digest("SHA-256",enc.encode([a,b].sort().join("|")));
+  const n=new DataView(h).getUint32(0)%1000000;
+  $("sas").textContent=String(n).padStart(6,"0");
+}
+function wire(ch){
+  dc=ch;
+  ch.onopen=()=>{setSt("terhubung","ok");log("Saluran terbuka. Mengirim data.");sendAll("hello");routeInfo()};
+  ch.onclose=()=>{setSt("terputus","no");log("Saluran tertutup")};
+  ch.onmessage=e=>onMsg(e.data);
+}
+function sendAll(why){
+  if(dc&&dc.readyState==="open"){dc.send(JSON.stringify({k:"snap",...snapshot()}));log("kirim ("+why+"), "+Object.keys(S.books).length+" catatan")}
+}
+function broadcast(why){sendAll(why)}
+function onMsg(raw){
+  let m;try{m=JSON.parse(raw)}catch(e){return log("pesan rusak")}
+  if(m.k==="ping"){dc.send(JSON.stringify({k:"pong",t:m.t}));return}
+  if(m.k==="pong"){log("ping: "+(performance.now()-m.t).toFixed(0)+" ms");return}
+  if(m.k!=="snap")return;
+  const r=merge(S.books,m.books);
+  if(r.changed){
+    const ids=Object.keys(m.books).filter(id=>r.books[id]===m.books[id]&&!( S.books[id]&&S.books[id]===r.books[id]));
+    S.books=r.books;S.clock=Math.max(S.clock,r.maxT);save();render();
+    log("terima & gabung: "+ids.length+" catatan baru/lebih baru");
+  }else log("terima: tidak ada yang lebih baru");
+  // kirim balik hanya bila kita punya yang lebih baru dari peer
+  const back=merge(m.books,S.books);
+  if(back.changed)sendAll("balasan");
+}
+async function routeInfo(){
+  try{
+    const stats=await pc.getStats();let pair;
+    stats.forEach(s=>{if(s.type==="candidate-pair"&&s.nominated&&s.state==="succeeded")pair=s});
+    if(!pair)return;
+    let lt="?";stats.forEach(s=>{if(s.id===pair.localCandidateId)lt=s.candidateType});
+    $("route").textContent="rute: "+({host:"jaringan lokal",srflx:"langsung lewat internet",prflx:"langsung",relay:"relay"}[lt]||lt);
+    log("Rute: "+lt);
+  }catch(e){}
+}
+$("mk").onclick=async()=>{
+  try{
+    mkPC();wire(pc.createDataChannel("sync"));
+    setSt("menyiapkan…");
+    await pc.setLocalDescription(await pc.createOffer());
+    await waitIce(pc);
+    offerSdp=pc.localDescription.sdp;
+    $("offer").value=b64e({t:"offer",sdp:offerSdp});
+    setSt("menunggu jawaban");log("Kode undangan siap ("+$("offer").value.length+" karakter)");
+  }catch(e){log("Error: "+e.message);setSt("error","no")}
+};
+$("join").onclick=async()=>{
+  try{
+    const o=b64d($("offIn").value);if(o.t!=="offer")throw new Error("bukan kode undangan");
+    mkPC();pc.ondatachannel=e=>wire(e.channel);
+    offerSdp=o.sdp;
+    await pc.setRemoteDescription({type:"offer",sdp:o.sdp});
+    await pc.setLocalDescription(await pc.createAnswer());
+    await waitIce(pc);
+    answerSdp=pc.localDescription.sdp;
+    $("answer").value=b64e({t:"answer",sdp:answerSdp});
+    setSt("kirim jawaban ke A");log("Kode jawaban siap");showSas();
+  }catch(e){log("Error: "+e.message);setSt("error","no")}
+};
+$("fin").onclick=async()=>{
+  try{
+    const a=b64d($("ansIn").value);if(a.t!=="answer")throw new Error("bukan kode jawaban");
+    answerSdp=a.sdp;
+    await pc.setRemoteDescription({type:"answer",sdp:a.sdp});
+    setSt("menyambung…");showSas();
+  }catch(e){log("Error: "+e.message);setSt("error","no")}
+};
+$("close").onclick=()=>{try{pc&&pc.close()}catch(e){}pc=dc=null;setSt("belum terhubung");$("sas").textContent="------";$("route").textContent="";log("Diputus")};
+$("ping").onclick=()=>{if(dc&&dc.readyState==="open")dc.send(JSON.stringify({k:"ping",t:performance.now()}));else log("Belum terhubung")};
+document.querySelectorAll("[data-copy]").forEach(b=>b.onclick=async()=>{
+  const el=$(b.dataset.copy);el.select();
+  try{await navigator.clipboard.writeText(el.value);log("Disalin")}catch(e){document.execCommand("copy");log("Disalin (cadangan)")}
+});
+document.querySelectorAll("[data-share]").forEach(b=>b.onclick=async()=>{
+  const v=$(b.dataset.share).value;if(!v)return;
+  if(navigator.share)try{await navigator.share({text:v})}catch(e){}else log("Perangkat ini tidak mendukung Bagikan; pakai Salin")
+});
+
+/* ---------- Ekspor / impor berkas yang digabung ---------- */
+$("exp").onclick=()=>{
+  const blob=new Blob([JSON.stringify({app:"synctest",v:1,books:S.books})],{type:"application/json"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download="perpustakaan-"+S.dev.slice(0,4)+".json";a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);log("Ekspor selesai");
+};
+$("imp").onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;
+  try{
+    const j=JSON.parse(await f.text());if(!j.books)throw new Error("format tidak dikenal");
+    const r=merge(S.books,j.books);
+    S.books=r.books;S.clock=Math.max(S.clock,r.maxT);save();render();
+    log("Impor "+f.name+": "+(r.changed?"digabung":"tidak ada yang lebih baru"));broadcast("impor");
+  }catch(err){log("Impor gagal: "+err.message)}
+  e.target.value="";
+};
+
+/* ---------- Uji otomatis penggabungan ---------- */
+$("self").onclick=()=>{
+  const out=$("selfOut");out.innerHTML="";
+  const T=(name,ok)=>{const li=document.createElement("li");li.textContent=(ok?"✔ ":"✘ ")+name;li.style.color=ok?"var(--acc)":"var(--bad)";out.appendChild(li)};
+  const A={x:{title:"X",pr:10,t:100,by:"a"}};
+  const B={x:{title:"X",pr:50,t:200,by:"b"}};
+  T("yang lebih baru menang",merge(A,B).books.x.pr===50&&merge(B,A).books.x.pr===50);
+  const ab=merge(A,B).books,ba=merge(B,A).books;
+  T("urutan gabung tidak berpengaruh (komutatif)",JSON.stringify(ab)===JSON.stringify(ba));
+  T("gabung dua kali tidak mengubah apa-apa (idempoten)",!merge(ab,B).changed&&!merge(ab,A).changed);
+  const D={x:{title:"X",pr:10,t:300,by:"a",del:true}};
+  T("penghapusan yang lebih baru mengalahkan ubahan lama",merge(B,D).books.x.del===true);
+  const E={x:{title:"X",pr:90,t:400,by:"b"}};
+  T("ubahan yang lebih baru mengalahkan penghapusan lama",!merge(D,E).books.x.del);
+  const C1={x:{title:"X",pr:1,t:500,by:"a"}},C2={x:{title:"X",pr:2,t:500,by:"b"}};
+  T("waktu sama: hasil tetap sama di dua sisi",JSON.stringify(merge(C1,C2).books)===JSON.stringify(merge(C2,C1).books));
+  const F={p:{title:"P",pr:1,t:1,by:"a"}},G={q:{title:"Q",pr:2,t:2,by:"b"}};
+  T("buku berbeda digabung semua",Object.keys(merge(F,G).books).length===2);
+  T("browser mendukung WebRTC",typeof RTCPeerConnection==="function");
+  T("browser mendukung WebCrypto",!!(window.crypto&&crypto.subtle));
+  try{localStorage.setItem("synctest.p","1");localStorage.removeItem("synctest.p");T("penyimpanan lokal bisa ditulis",true)}catch(e){T("penyimpanan lokal bisa ditulis",false)}
+  T("berjalan di HTTPS atau localhost",window.isSecureContext);
+  if(navigator.storage&&navigator.storage.persisted)navigator.storage.persisted().then(p=>{T("penyimpanan persisten: "+(p?"ya":"belum"),true)});
+};
+
+render();
+log("Siap. ID perangkat "+S.dev);
+})();
+</script>
+</body>
+</html>
